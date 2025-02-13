@@ -134,28 +134,6 @@ def track_daily_spx_skew():
     print(f"SPX Skew on {today}: {skew}")
     return df
 
-def slack(df):
-    # Slack API Configuration
-    SLACK_BOT_TOKEN = "xoxb-8442501448374-8449112677459-9jKEx9UUK0mdyfK8xLWDSPVy"
-    SLACK_CHANNEL_ID = "C08CSHKM947"  # Replace with your channel ID
-
-    # Convert DataFrame to Markdown for Slack
-    df_markdown = df.to_markdown(index=False)
-
-    # Send a message with the DataFrame
-    slack_message = f"*📊 Daily Report - {pd.Timestamp.today().strftime('%Y-%m-%d')}*\n```{df_markdown}```"
-
-    response = requests.post(
-        "https://slack.com/api/chat.postMessage",
-        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
-        json={"channel": SLACK_CHANNEL_ID, "text": slack_message},
-    )
-
-    if response.json().get("ok"):
-        print("Message sent successfully to Slack!")
-    else:
-        print("Error sending message:", response.json())
-
 # Run the script daily
 if __name__ == "__main__":
     df = track_daily_spx_skew()
