@@ -68,7 +68,7 @@ def get_atm_constituent_options(sp, exp):
     mids = []
     symbols = []
     caps = []
-    for constituent in sp[:5]:
+    for constituent in sp:
         try:
             constituent_ticker = yf.Ticker(constituent)
             options_data = constituent_ticker.option_chain(exp)
@@ -180,16 +180,16 @@ def get_ohlc(symbols, start_date, end_date):
 def signal(window_size, df, long_signal, short_signal):
     end = datetime.today().date()
     start = end - timedelta(days=window_size+18)
-    # spx_prices = get_ohlc(["^SPX"], start, end)
-    # spx_prices.to_pickle('spx.pkl')
+    spx_prices = get_ohlc(["^SPX"], start, end)
+    spx_prices.to_pickle('spx.pkl')
     spx_prices = pd.read_pickle('spx.pkl')
     #long we need lowest correlation
     #short we need highest correlation
     if long_signal:
         df = df[df['IV'] < df['Rolling IV']]
         universe = [x for x in df['Symbol']]
-        # universe = get_ohlc(universe, start, end)
-        # universe.to_pickle('universe.pkl')
+        universe = get_ohlc(universe, start, end)
+        universe.to_pickle('universe.pkl')
         universe = pd.read_pickle('universe.pkl')
         spx_prices.index = pd.to_datetime(spx_prices.index)
         universe.index = pd.to_datetime(universe.index)
@@ -218,8 +218,8 @@ def signal(window_size, df, long_signal, short_signal):
     elif short_signal:
         df = df[df['IV'] > df['Rolling IV']]
         universe = [x for x in df['Symbol']]
-        # universe = get_ohlc(universe, start, end)
-        # universe.to_pickle('universe.pkl')
+        universe = get_ohlc(universe, start, end)
+        universe.to_pickle('universe.pkl')
         universe = pd.read_pickle('universe.pkl')
         spx_prices.index = pd.to_datetime(spx_prices.index)
         universe.index = pd.to_datetime(universe.index)
@@ -281,7 +281,7 @@ if __name__ == "__main__":
     long_signal = disp.loc[len(disp)-1, "Long Signal"]
     short_signal = disp.loc[len(disp)-1, 'Short Signal']
     window_size = 30
-    # df.to_pickle('df.pkl')
+    df.to_pickle('df.pkl')
     df = pd.read_pickle('df.pkl')
     
     
