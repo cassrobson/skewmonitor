@@ -154,7 +154,7 @@ def track_daily_spx_skew():
 # Run the script daily
 if __name__ == "__main__":
     df, signal = track_daily_spx_skew()
-    plot_path = "plots/iv_skew_plot.png"  # Ensure this path is correct
+    plot_path = r"C:\Users\Cassel Robson\skewmonitor\plots\iv_skew_plot.png"  # Ensure this path is correct
 
     # Email configuration
     SMTP_SERVER = "smtp.gmail.com"  # Change based on your email provider
@@ -162,7 +162,7 @@ if __name__ == "__main__":
     SENDER_EMAIL = "casselrobson93@gmail.com"
     SENDER_PASSWORD = "lajhhtqevwvomcts"  # Use an app password if using Gmail
     RECIPIENT_EMAIL = "casselrobson19@gmail.com"
-    SUBJECT = f"Daily Skew Sentiment {signal} - {datetime.today().strftime('%Y-%m-%d')}"
+    SUBJECT = f"Daily Skew Sentiment - {signal} - {datetime.today().strftime('%Y-%m-%d')}"
 
     # Convert DataFrame to HTML table
     df_html = df.to_html(index=False, border=1, justify="center")

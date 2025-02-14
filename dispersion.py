@@ -1,9 +1,17 @@
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import warnings
 import os
 import matplotlib.pyplot as plt
+
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+
+
 warnings.filterwarnings('ignore')
 def get_constituents():
     sp500 = 'https://yfiua.github.io/index-constituents/constituents-sp500.csv'
@@ -141,7 +149,7 @@ def plot():
     plt.xticks(rotation=45)
     plt.title("Dispersion over Time")
     # Save plot
-    plt.savefig("plots/dispersion_plot.png", bbox_inches="tight")
+    plt.savefig(r"C:\Users\Cassel Robson\skewmonitor\plots\dispersion_plot.png", bbox_inches="tight")
     plt.close()
     return plot_disp
 
@@ -157,44 +165,261 @@ def calculate_macd(series, fast=12, slow=26, signal=9):
     signal_line = macd.ewm(span=signal, adjust=False).mean()
     return macd, signal_line
 
+def get_ohlc(symbols, start_date, end_date):
+    data = {}
+    for symbol in symbols:
+        print(symbol)
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(start=start_date, end=end_date)
+        data[symbol] = df[['Close']]
+    
+    # Combine the data into a single DataFrame with multi-level columns
+    combined_df = pd.concat(data, axis=1)
+    return combined_df
+
+def signal(window_size, df, long_signal, short_signal):
+    end = datetime.today().date()
+    start = end - timedelta(days=window_size+18)
+    # spx_prices = get_ohlc(["^SPX"], start, end)
+    # spx_prices.to_pickle('spx.pkl')
+    spx_prices = pd.read_pickle('spx.pkl')
+    #long we need lowest correlation
+    #short we need highest correlation
+    if long_signal:
+        df = df[df['IV'] < df['Rolling IV']]
+        universe = [x for x in df['Symbol']]
+        # universe = get_ohlc(universe, start, end)
+        # universe.to_pickle('universe.pkl')
+        universe = pd.read_pickle('universe.pkl')
+        spx_prices.index = pd.to_datetime(spx_prices.index)
+        universe.index = pd.to_datetime(universe.index)
+        spx_prices.columns = spx_prices.columns.droplevel(1)
+        universe.columns = universe.columns.droplevel(1)
+
+        # Compute returns
+        spx_returns = spx_prices.pct_change().dropna()
+        returns = universe.pct_change().dropna()
+
+        # Ensure `spx_returns` is a DataFrame (not Series) and has the correct column name
+        spx_returns = spx_returns.rename(columns={"^SPX": "SPX"})
+
+        # Compute rolling correlation for each stock vs SPX
+        window_size = 30
+        rolling_corr = returns.rolling(window_size).corr(spx_returns["SPX"]).dropna().tail(1)
+        rolling_corr = rolling_corr.transpose()
+        rolling_corr.columns = ["Rolling Corr"]
+        rolling_corr.columns.name = None
+        rolling_corr = rolling_corr.sort_values("Rolling Corr", ascending=True)
+        long_vol = rolling_corr.head(len(rolling_corr)//3)
+        df = df.set_index('Symbol')
+        df = df[df.index.isin(long_vol.index)]
+        long_vol = pd.concat([df, long_vol], axis=1)
+        return long_vol
+    elif short_signal:
+        df = df[df['IV'] > df['Rolling IV']]
+        universe = [x for x in df['Symbol']]
+        # universe = get_ohlc(universe, start, end)
+        # universe.to_pickle('universe.pkl')
+        universe = pd.read_pickle('universe.pkl')
+        spx_prices.index = pd.to_datetime(spx_prices.index)
+        universe.index = pd.to_datetime(universe.index)
+        spx_prices.columns = spx_prices.columns.droplevel(1)
+        universe.columns = universe.columns.droplevel(1)
+
+        # Compute returns
+        spx_returns = spx_prices.pct_change().dropna()
+        returns = universe.pct_change().dropna()
+
+        # Ensure `spx_returns` is a DataFrame (not Series) and has the correct column name
+        spx_returns = spx_returns.rename(columns={"^SPX": "SPX"})
+
+        # Compute rolling correlation for each stock vs SPX
+        window_size = 30
+        rolling_corr = returns.rolling(window_size).corr(spx_returns["SPX"]).dropna().tail(1)
+        rolling_corr = rolling_corr.transpose()
+        rolling_corr.columns = ["Rolling Corr"]
+        rolling_corr.columns.name = None
+        rolling_corr = rolling_corr.sort_values("Rolling Corr", ascending=True)
+        short_vol = rolling_corr.tail(len(rolling_corr)//3)
+        df = df.set_index('Symbol')
+        df = df[df.index.isin(short_vol.index)]
+        short_vol = pd.concat([df, short_vol], axis=1)
+        return short_vol
+    else: return None
 
 if __name__ == "__main__":
-    # sp = get_constituents()
-    # spx_iv, exp = fetch_spx_options_data()
-    # # df = get_atm_constituent_options(sp, exp)
-    # # df.to_pickle('implieds.pkl')
-    # df = pd.read_pickle('implieds.pkl')
-    # store_new_implied_vol(df, spx_iv)
-    # df = get_rolling_ivs(sp, df)
-    # df = df.sort_values('Market Cap', ascending=False)
-    # df['Weight'] = df['Market Cap']/df['Market Cap'].sum()
-    # df['Weight Adj IV'] = df['Weight']*df['IV']
-    # weighted_sum_iv = df['Weight Adj IV'].sum()
+    sp = get_constituents()
+    spx_iv, exp = fetch_spx_options_data()
+    df = get_atm_constituent_options(sp, exp)
+    df.to_pickle('implieds.pkl')
+    df = pd.read_pickle('implieds.pkl')
+    store_new_implied_vol(df, spx_iv)
+    df = get_rolling_ivs(sp, df)
+    df = df.sort_values('Market Cap', ascending=False)
+    df['Weight'] = df['Market Cap']/df['Market Cap'].sum()
+    df['Weight Adj IV'] = df['Weight']*df['IV']
+    weighted_sum_iv = df['Weight Adj IV'].sum()
     
 
-    # dispersion_gap = spx_iv - weighted_sum_iv
+    dispersion_gap = spx_iv - weighted_sum_iv
     
-    # dispersion_df = pd.DataFrame({"Date":[datetime.today().date().strftime("%Y-%m-%d")], "SPX ATM IV":[spx_iv], "Constit. ATM IV":[weighted_sum_iv]})
+    dispersion_df = pd.DataFrame({"Date":[datetime.today().date().strftime("%Y-%m-%d")], "SPX ATM IV":[spx_iv], "Constit. ATM IV":[weighted_sum_iv]})
 
-    # try:
-    #     dispersion_df.to_csv("dispersion.csv", mode='a', header=False, index=False)
-    # except FileNotFoundError:
-    #     dispersion_df.to_csv('dispersion.csv', mode='w', header=True, index=False)
+    try:
+        dispersion_df.to_csv("dispersion.csv", mode='a', header=False, index=False)
+    except FileNotFoundError:
+        dispersion_df.to_csv('dispersion.csv', mode='w', header=True, index=False)
     
     disp = plot()
-    df = disp
-    df['Z-Score'] = calculate_z_score(df['Dispersion'])
-    df['MACD'], df['Signal Line'] = calculate_macd(df['Dispersion'])
+
+    disp['Z-Score'] = calculate_z_score(disp['Dispersion'])
+    disp['MACD'], disp['Signal Line'] = calculate_macd(disp['Dispersion'])
 
     # Trading Signals
-    df['Long Entry'] = (df['Z-Score'] < -2) & (df['MACD'] > df['Signal Line'])
-    df['Short Entry'] = (df['Z-Score'] > 2) & (df['MACD'] < df['Signal Line'])
+    disp['Long Signal'] = (disp['Z-Score'] < -2) & (disp['MACD'] > disp['Signal Line'])
+    disp['Short Signal'] = (disp['Z-Score'] > 2) & (disp['MACD'] < disp['Signal Line'])
+    long_signal = disp.loc[len(disp)-1, "Long Signal"]
+    short_signal = disp.loc[len(disp)-1, 'Short Signal']
+    window_size = 30
+    # df.to_pickle('df.pkl')
+    df = pd.read_pickle('df.pkl')
     
-    # if dispersion gap is positive, short index IV (short SPX straddle)
-    # Long SSO with lowest relative IV (compare to 30d average)
+    
+    long_signal = True
+    short_signal = False
 
-    # if dispersion gap is negative, long index vol, and short high IV constituents. 
+
+    constituents_to_trade = signal(window_size, df, long_signal, short_signal)
+
+    if long_signal ==True:
+        signal_string = "Short SPX Gamma, Long Constit."
+
+    elif short_signal == True:
+        signal_string = "Long SPX Gamma, Short Constit."
+    else:
+        signal_string = "No Action"
+
     
 
+    plot_path = r"C:\Users\Cassel Robson\skewmonitor\plots\dispersion_plot.png"
+    # Email configuration
+    SMTP_SERVER = "smtp.gmail.com"  # Change based on your email provider
+    SMTP_PORT = 587
+    SENDER_EMAIL = "casselrobson93@gmail.com"
+    SENDER_PASSWORD = "lajhhtqevwvomcts"  # Use an app password if using Gmail
+    RECIPIENT_EMAIL = "casselrobson19@gmail.com"
+    SUBJECT = f"Daily Dispersion - {signal_string} - {datetime.today().strftime('%Y-%m-%d')}"
+
+
+    ht_disp = disp.to_html(index=False, border=1, justify='center')
+    if long_signal == True:
+        # Convert DataFrame to HTML table
+        ht_constituents = constituents_to_trade.to_html(index=True, border=1, justify="center")
+
+        # Create email message
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = RECIPIENT_EMAIL
+        msg["Subject"] = SUBJECT
+
+        # Email body
+        email_body = f"""\
+        <html>
+        <head>
+            <style>
+                table {{border-collapse: collapse; width: 100%;}}
+                th, td {{border: 1px solid black; padding: 8px; text-align: center;}}
+                th {{background-color: #f2f2f2;}}
+            </style>
+        </head>
+        <body>
+            <h2>Daily Dispersion</h2>
+            {ht_disp}
+            <h2>Constituents to Trade</h2>
+            {ht_constituents}
+            <p>Plot of Dispersion Levels.</p>
+        </body>
+        </html>
+        """
+    elif short_signal == True:
+        # Convert DataFrame to HTML table
+        ht_constituents = constituents_to_trade.to_html(index=True, border=1, justify="center")
+
+        # Create email message
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = RECIPIENT_EMAIL
+        msg["Subject"] = SUBJECT
+
+        # Email body
+        email_body = f"""\
+        <html>
+        <head>
+            <style>
+                table {{border-collapse: collapse; width: 100%;}}
+                th, td {{border: 1px solid black; padding: 8px; text-align: center;}}
+                th {{background-color: #f2f2f2;}}
+            </style>
+        </head>
+        <body>
+            <h2>Daily Dispersion</h2>
+            {ht_disp}
+            <h2>Constituents to Trade</h2>
+            {ht_constituents}
+            <p>Plot of Dispersion Levels.</p>
+        </body>
+        </html>
+        """
+    else:
+        # Convert DataFrame to HTML table
+        ht_constituents = constituents_to_trade.to_html(index=True, border=1, justify="center")
+
+        # Create email message
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = RECIPIENT_EMAIL
+        msg["Subject"] = SUBJECT
+
+        # Email body
+        email_body = f"""\
+        <html>
+        <head>
+            <style>
+                table {{border-collapse: collapse; width: 100%;}}
+                th, td {{border: 1px solid black; padding: 8px; text-align: center;}}
+                th {{background-color: #f2f2f2;}}
+            </style>
+        </head>
+        <body>
+            <h2>Daily Dispersion</h2>
+            {ht_disp}
+            <p>Plot of Dispersion Levels.</p>
+        </body>
+        </html>
+        """
+
+    msg.attach(MIMEText(email_body, "html"))
+
+    # Attach plot
+    if os.path.exists(plot_path):
+        with open(plot_path, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={os.path.basename(plot_path)}")
+            msg.attach(part)
+
+    # Send the email
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+        server.quit()
+        print("Email sent successfully!")
+    except Exception as e:
+        print(f"Error sending email: {e}")
+
+    
 
     
