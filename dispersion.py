@@ -13,6 +13,41 @@ from email import encoders
 
 
 warnings.filterwarnings('ignore')
+
+def get_next_third_friday():
+    today = datetime.today()
+    
+    # Determine the upcoming month
+    if today.day > 14:  # If we're past the second Friday, go to next month
+        target_month = today.month + 1
+        target_year = today.year if target_month <= 12 else today.year + 1
+        target_month = target_month if target_month <= 12 else 1
+    else:
+        target_month = today.month
+        target_year = today.year
+    
+    # Find the third Friday of the target month
+    first_day = datetime(target_year, target_month, 1)
+    weekday_of_first = first_day.weekday()  # 0 = Monday, ..., 4 = Friday
+    first_friday = 1 + (4 - weekday_of_first) % 7
+    third_friday = first_friday + 14
+    third_friday_date = datetime(target_year, target_month, third_friday)
+
+    # If the third Friday is within 7 days, roll over to the next month's third Friday
+    if (third_friday_date - today).days <= 7:
+        target_month += 1
+        if target_month > 12:
+            target_month = 1
+            target_year += 1
+
+        first_day = datetime(target_year, target_month, 1)
+        weekday_of_first = first_day.weekday()
+        first_friday = 1 + (4 - weekday_of_first) % 7
+        third_friday = first_friday + 14
+        third_friday_date = datetime(target_year, target_month, third_friday)
+
+    return third_friday_date.strftime('%Y-%m-%d')
+
 def get_constituents():
     sp500 = 'https://yfiua.github.io/index-constituents/constituents-sp500.csv'
 
@@ -26,23 +61,23 @@ def get_constituents():
 def fetch_spx_options_data():
     spx = yf.Ticker('^SPX')
     
-    # Get options expiration dates for SPX
-    expiration_dates = spx.options
-    # Fetch the options data for the nearest expiration date (or specify one)
-
-    exp = expiration_dates[22]
+    exp = get_next_third_friday()
 
     options_data = spx.option_chain(exp)  # Choose the nearest expiration
 
     # Combine the calls and puts into one DataFrame
     calls = options_data.calls
-
     puts = options_data.puts
     spx_price = spx.history(period='1d')['Close'][0]
-    calls = calls[(calls['strike']>spx_price-2.5)&(calls['strike']<spx_price+2.5)]
-    puts = puts[(puts['strike']>spx_price-2.5)&(puts['strike']<spx_price+2.5)]
-    calls = calls.reset_index().drop(columns='index')
-    puts = puts.reset_index().drop(columns='index')
+    
+    all_strikes = sorted(set(calls['strike']).union(set(puts['strike'])))
+    closest_strike = min(all_strikes, key=lambda x: abs(x - spx_price))
+    
+
+    # Filter options to only include the closest strike price
+    calls = calls[calls['strike'] == closest_strike].reset_index(drop=True)
+    puts = puts[puts['strike'] == closest_strike].reset_index(drop=True)
+
     c_iv = calls.loc[0, "impliedVolatility"]
     p_iv = puts.loc[0, 'impliedVolatility']
     mid_iv = (c_iv+p_iv)/2
@@ -63,37 +98,77 @@ def get_rolling_iv(ticker):
         rolling_iv = df[ticker].rolling(window=30).mean().tail(1).values[0]
     return rolling_iv
 
-
 def get_atm_constituent_options(sp, exp):
-    mids = []
-    symbols = []
-    caps = []
+    # Batch download spot prices and market caps
+    tickers_data = yf.download(sp, period="1d", progress=False)['Close']
+    mids, symbols, caps = [], [], []
+    
     for constituent in sp:
+        print('here')
         try:
+            spot = tickers_data[constituent] if constituent in tickers_data else None
+            if spot is None or pd.isna(spot):
+                continue  # Skip if no valid spot price
+
             constituent_ticker = yf.Ticker(constituent)
             options_data = constituent_ticker.option_chain(exp)
-            calls = options_data.calls
-            puts = options_data.puts
-            spot, mkcap = get_ticker_spot(constituent_ticker)
-            calls = calls[(calls['strike']>spot-2.5)&(calls['strike']<spot+2.5)]
-            puts = puts[(puts['strike']>spot-2.5)&(puts['strike']<spot+2.5)]
-            calls = calls.reset_index().drop(columns='index')
-            puts = puts.reset_index().drop(columns='index')
-            c_iv = calls.loc[0, "impliedVolatility"]
-            p_iv = puts.loc[0, 'impliedVolatility']
-            mid_iv = (c_iv+p_iv)/2
+            
+            all_strikes = sorted(set(options_data.calls['strike']).union(set(options_data.puts['strike'])))
+            closest_strike = min(all_strikes, key=lambda x: abs(x - spot))
+
+            # Find ATM option
+            call_iv = options_data.calls[options_data.calls['strike'] == closest_strike]['impliedVolatility']
+            put_iv = options_data.puts[options_data.puts['strike'] == closest_strike]['impliedVolatility']
+            
+            if call_iv.empty or put_iv.empty:
+                continue  # Skip if no valid IV
+
+            mid_iv = (call_iv.iloc[0] + put_iv.iloc[0]) / 2
             mids.append(mid_iv)
             symbols.append(constituent)
-            caps.append(mkcap)
+            caps.append(None)  # You can optimize market cap retrieval separately
+
         except Exception as e:
-            print(e)
+            print(f"Error fetching {constituent}: {e}")
             continue
+
+    # Create DataFrame
     implied_vols = pd.DataFrame({
-        "Symbol":symbols,
-        "IV":mids,
-        "Market Cap":caps
+        "Symbol": symbols,
+        "IV": mids,
+        "Market Cap": caps
     })
     return implied_vols
+# def get_atm_constituent_options(sp, exp):
+#     mids = []
+#     symbols = []
+#     caps = []
+#     for constituent in sp:
+#         try:
+#             constituent_ticker = yf.Ticker(constituent)
+#             options_data = constituent_ticker.option_chain(exp)
+#             calls = options_data.calls
+#             puts = options_data.puts
+#             spot, mkcap = get_ticker_spot(constituent_ticker)
+#             calls = calls[(calls['strike']>spot-2.5)&(calls['strike']<spot+2.5)]
+#             puts = puts[(puts['strike']>spot-2.5)&(puts['strike']<spot+2.5)]
+#             calls = calls.reset_index().drop(columns='index')
+#             puts = puts.reset_index().drop(columns='index')
+#             c_iv = calls.loc[0, "impliedVolatility"]
+#             p_iv = puts.loc[0, 'impliedVolatility']
+#             mid_iv = (c_iv+p_iv)/2
+#             mids.append(mid_iv)
+#             symbols.append(constituent)
+#             caps.append(mkcap)
+#         except Exception as e:
+#             print(e)
+#             continue
+#     implied_vols = pd.DataFrame({
+#         "Symbol":symbols,
+#         "IV":mids,
+#         "Market Cap":caps
+#     })
+#     return implied_vols
 
 def store_new_implied_vol(df, spx_iv):
     store_iv = df
