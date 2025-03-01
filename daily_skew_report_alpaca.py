@@ -129,7 +129,6 @@ def find_skew(df, expiry_dt):
     # Combine results into a single DataFrame
     skew = put_iv - call_iv
 
-
     return put_iv, call_iv, put_strike, call_strike, skew
 
 def plot():

@@ -11,7 +11,6 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
-
 warnings.filterwarnings('ignore')
 
 def get_next_third_friday():
