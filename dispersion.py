@@ -227,12 +227,12 @@ def plot():
     plt.close()
     return plot_disp
 
-def calculate_z_score(series, lookback=20):
+def calculate_z_score(series, lookback=5):
     mean = series.rolling(window=lookback).mean()
     std = series.rolling(window=lookback).std()
     return (series - mean) / std
 
-def calculate_macd(series, fast=12, slow=26, signal=9):
+def calculate_macd(series, fast=3, slow=8, signal=3):
     ema_fast = series.ewm(span=fast, adjust=False).mean()
     ema_slow = series.ewm(span=slow, adjust=False).mean()
     macd = ema_fast - ema_slow
