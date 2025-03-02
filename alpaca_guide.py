@@ -65,7 +65,7 @@ option_symbol = get_options_symbol('SPY', '2025-03-21', strike=590, contract=Con
 
 chain_snap = option_historical_data_client.get_option_chain(
     OptionChainRequest(
-        underlying_symbol='SPY'
+        underlying_symbol='BF/B'
     )
 )
 
@@ -115,4 +115,4 @@ df['strike_price'] = df['symbol'].str[10:].astype(int) / 1000
 
 # Display the cleaned DataFrame
 print(df)
-df.to_excel('SPYchain.xlsx')
+

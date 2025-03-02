@@ -2,6 +2,9 @@ import os
 from dotenv import load_dotenv
 import numpy as np
 import pandas as pd
+import time
+max_requests_per_minute = 150
+delay_per_request = 60/max_requests_per_minute
 load_dotenv()
 ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
 ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET")
@@ -138,6 +141,7 @@ def get_constituents():
     sp500 = sp500.sort_values("Symbol", ascending=True)
     sp500_constituents = sp500['Symbol'].to_list()
     sp500_constituents = [x.replace("-",".") for x in sp500_constituents]
+    sp500_constituents = [x for x in sp500_constituents if x != "BF.B"]
 
     return sp500_constituents
 
@@ -197,14 +201,29 @@ def get_atm_constituent_options(sp, exp):
 
     mids, symbols = [], []
 
-    for symbol in sp:
+    for i, symbol in enumerate(sp, start=1):  # Start index at 1 for easier mod checks
         try:
             mid_iv = fetch_mid_iv(symbol, exp, spots)
             mids.append(mid_iv)
             symbols.append(symbol)
-        except KeyError:
-            print("could not get mid_iv for {}".format(symbol))
+        except Exception as e:
+            print("Error for {}: {}".format(symbol, e))
             continue
+        
+        if i % max_requests_per_minute == 0:  # If reaching limit, pause
+            print("Reached 150 API calls, sleeping for 60 seconds...")
+            time.sleep(60)
+        else:
+            time.sleep(delay_per_request)
+
+    # for symbol in sp:
+    #     try:
+    #         mid_iv = fetch_mid_iv(symbol, exp, spots)
+    #         mids.append(mid_iv)
+    #         symbols.append(symbol)
+    #     except KeyError:
+    #         print("could not get mid_iv for {}".format(symbol))
+    #         continue
     
     implied_vols = pd.DataFrame({
         "Symbol":symbols, 
@@ -351,12 +370,12 @@ def signal(window, implied_vols, long_signal, short_signal, sp):
     
 if __name__=="__main__":
     sp = get_constituents()
-    # exp = get_next_third_friday()
-    # spx_iv = fetch_spx_iv(exp)
+    exp = get_next_third_friday()
+    spx_iv = fetch_spx_iv(exp)
 
-    # # implied_vols = get_atm_constituent_options(sp[:10], exp)
-    # # implied_vols.to_pickle('implied_vols.pkl')
-    implied_vols = pd.read_pickle('implied_vols.pkl')
+    # implied_vols = get_atm_constituent_options(sp, exp)
+    # implied_vols.to_pickle(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\implied_vols.pkl')
+    implied_vols = pd.read_pickle(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\implied_vols.pkl')
     mkt_caps = pd.read_excel(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\market_caps\market_caps.xlsx", sheet_name='Market Caps')
     mkt_caps = mkt_caps[["Ticker", 'Market Cap']].rename(columns={'Ticker': 'Symbol'}).set_index('Symbol')
     implied_vols = implied_vols.set_index('Symbol')
@@ -364,21 +383,21 @@ if __name__=="__main__":
     implied_vols = pd.merge(implied_vols, mkt_caps, left_index=True, right_index=True, how='inner')
     implied_vols['Weight'] = implied_vols['Market Cap']/implied_vols['Market Cap'].sum()
     implied_vols['Weight Adj IV'] = implied_vols['Weight'] * implied_vols['IV']
-    # weighted_sum_IV = implied_vols['Weight Adj IV'].sum()
+    weighted_sum_IV = implied_vols['Weight Adj IV'].sum()
 
-    # dispersion_df = pd.DataFrame({"Date":[datetime.today().date().strftime("%Y-%m-%d")], "SPX ATM IV":[spx_iv], "Constit. ATM IV":[weighted_sum_IV]})
+    dispersion_df = pd.DataFrame({"Date":[datetime.today().date().strftime("%Y-%m-%d")], "SPX ATM IV":[spx_iv], "Constit. ATM IV":[weighted_sum_IV]})
 
-    # try:
-    #     dispersion_df.to_csv(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\dispersion.csv", mode='a', header=False, index=False)
-    # except FileNotFoundError:
-    #     dispersion_df.to_csv(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\dispersion.csv', mode='w', header=True, index=False)
+    try:
+        dispersion_df.to_csv(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\dispersion.csv", mode='a', header=False, index=False)
+    except FileNotFoundError:
+        dispersion_df.to_csv(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\dispersion.csv', mode='w', header=True, index=False)
 
     disp = plot()
     long_signal = disp.loc[len(disp)-1, "Long Dispersion"]
     short_signal = disp.loc[len(disp)-1, 'Short Dispersion']
     correlation_window = 30
-    constituents_to_trade = signal(correlation_window, implied_vols, long_signal, short_signal, sp[:10])
-
+    constituents_to_trade = signal(correlation_window, implied_vols, long_signal, short_signal, sp)
+    
     if long_signal ==True:
         signal_string = "Short SPX Gamma, Long High Vol Low Corr Constit."
 
@@ -396,39 +415,11 @@ if __name__=="__main__":
     RECIPIENT_EMAIL = "casselrobson19@gmail.com"
     SUBJECT = f"Daily Dispersion - {signal_string} - {datetime.today().strftime('%Y-%m-%d')}"
     
-
+    disp.iloc[:, 1:8] = disp.iloc[:, 1:8].round(2)
     ht_disp = disp.sort_values("Date", ascending=False).head(5).to_html(index=False, border=1, justify='center')
     if constituents_to_trade is not None:
         # Convert DataFrame to HTML table
-        ht_constituents = constituents_to_trade.to_html(index=True, border=1, justify="center")
-
-        # Create email message
-        msg = MIMEMultipart()
-        msg["From"] = SENDER_EMAIL
-        msg["To"] = RECIPIENT_EMAIL
-        msg["Subject"] = SUBJECT
-
-        # Email body
-        email_body = f"""\
-        <html>
-        <head>
-            <style>
-                table {{border-collapse: collapse; width: 100%;}}
-                th, td {{border: 1px solid black; padding: 8px; text-align: center;}}
-                th {{background-color: #f2f2f2;}}
-            </style>
-        </head>
-        <body>
-            <h2>Daily Dispersion</h2>
-            {ht_disp}
-            <h2>Constituents to Trade</h2>
-            {ht_constituents}
-            <p>Plot of Dispersion Levels.</p>
-        </body>
-        </html>
-        """
-    elif short_signal == True:
-        # Convert DataFrame to HTML table
+        constituents_to_trade.index.name = None
         ht_constituents = constituents_to_trade.to_html(index=True, border=1, justify="center")
 
         # Create email message
@@ -457,9 +448,6 @@ if __name__=="__main__":
         </html>
         """
     else:
-        # Convert DataFrame to HTML table
-        ht_constituents = constituents_to_trade.to_html(index=True, border=1, justify="center")
-
         # Create email message
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
