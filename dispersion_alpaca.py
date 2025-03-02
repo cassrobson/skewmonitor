@@ -373,8 +373,8 @@ if __name__=="__main__":
     exp = get_next_third_friday()
     spx_iv = fetch_spx_iv(exp)
 
-    # implied_vols = get_atm_constituent_options(sp, exp)
-    # implied_vols.to_pickle(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\implied_vols.pkl')
+    implied_vols = get_atm_constituent_options(sp, exp)
+    implied_vols.to_pickle(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\implied_vols.pkl')
     implied_vols = pd.read_pickle(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\implied_vols.pkl')
     mkt_caps = pd.read_excel(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\market_caps\market_caps.xlsx", sheet_name='Market Caps')
     mkt_caps = mkt_caps[["Ticker", 'Market Cap']].rename(columns={'Ticker': 'Symbol'}).set_index('Symbol')
