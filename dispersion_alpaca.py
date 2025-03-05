@@ -412,7 +412,7 @@ if __name__=="__main__":
     SMTP_PORT = 587
     SENDER_EMAIL = "casselrobson93@gmail.com"
     SENDER_PASSWORD = "lajhhtqevwvomcts"  # Use an app password if using Gmail
-    RECIPIENT_EMAIL = "casselrobson19@gmail.com"
+    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca"]
     SUBJECT = f"Daily Dispersion - {signal_string} - {datetime.today().strftime('%Y-%m-%d')}"
     
     disp.iloc[:, 1:8] = disp.iloc[:, 1:8].round(2)
@@ -425,7 +425,7 @@ if __name__=="__main__":
         # Create email message
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
-        msg["To"] = RECIPIENT_EMAIL
+        msg["To"] = ", ".join(RECIPIENT_EMAILS)
         msg["Subject"] = SUBJECT
 
         # Email body
@@ -451,7 +451,7 @@ if __name__=="__main__":
         # Create email message
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
-        msg["To"] = RECIPIENT_EMAIL
+        msg["To"] = RECIPIENT_EMAILS
         msg["Subject"] = SUBJECT
 
         # Email body
@@ -488,7 +488,7 @@ if __name__=="__main__":
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAILS, msg.as_string())
         server.quit()
         print("Email sent successfully!")
     except Exception as e:
