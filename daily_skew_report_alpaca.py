@@ -202,8 +202,8 @@ if __name__=="__main__":
     # Email configuration
     SMTP_SERVER = "smtp.gmail.com"  # Gmail SMTP server
     SMTP_PORT = 587
-    SENDER_EMAIL = "mmisic03@gmail.com"
-    SENDER_PASSWORD = "ynbu lndn lfxx sulk"  
+    SENDER_EMAIL = "casselrobson93@gmail.com"
+    SENDER_PASSWORD = "lajhhtqevwvomcts"  
     RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca"]
     SUBJECT = f"Daily Skew Sentiment - {signal} - {datetime.today().strftime('%Y-%m-%d')}"
 

@@ -421,8 +421,8 @@ if __name__=="__main__":
     # Email configuration
     SMTP_SERVER = "smtp.gmail.com"  # Gmail SMTP server
     SMTP_PORT = 587
-    SENDER_EMAIL = "mmisic03@gmail.com"
-    SENDER_PASSWORD = "ynbu lndn lfxx sulk"  # Use an app password if required
+    SENDER_EMAIL = "casselrobson93@gmail.com"
+    SENDER_PASSWORD = "lajhhtqevwvomcts" # Use an app password if required
     RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca"]
     SUBJECT = f"Daily Dispersion - {signal_string} - {datetime.today().strftime('%Y-%m-%d')}"
     
