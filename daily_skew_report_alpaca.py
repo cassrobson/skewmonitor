@@ -11,13 +11,19 @@ from email import encoders
 import warnings
 warnings.filterwarnings('ignore')
 load_dotenv()
-ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
-ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET")
-ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL")
+
+ALPACA_API_KEY="PKSWP8A9QH87I5DX69Y4"
+ALPACA_API_SECRET="we0Fo1a7UmijE45Z3rWYkZjXqnsfFg3B8pwrnbdC"
+ALPACA_BASE_URL="https://paper-api.alpaca.markets/"
 
 from alpaca.data.requests import OptionChainRequest
 from alpaca.data.historical import OptionHistoricalDataClient
 option_historical_data_client = OptionHistoricalDataClient(ALPACA_API_KEY, ALPACA_API_SECRET)
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+skew_csv_path = os.path.join(script_dir, "spx_skew.csv")
+plot_dir = os.path.join(script_dir, "plots")
+plot_path = os.path.join(plot_dir, "iv_skew_plot.png")
 
 def get_option_chain_snap(symbol):
     chain_snap = option_historical_data_client.get_option_chain(
@@ -132,7 +138,7 @@ def find_skew(df, expiry_dt):
     return put_iv, call_iv, put_strike, call_strike, skew
 
 def plot():
-    plot_skew = pd.read_csv(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\spx_skew.csv')
+    plot_skew = pd.read_csv(skew_csv_path)
     plot_skew.columns = ['Date', '30Δ Call IV', "Call Strike", '30Δ Put IV', 'Put Strike', 'Skew']
     df = plot_skew
     df["Date"] = pd.to_datetime(df["Date"])
@@ -162,7 +168,7 @@ def plot():
     plt.xticks(rotation=45)
     plt.title("30Δ Call IV, 30Δ Put IV, and Skew Over Time")
     # Save plot
-    plt.savefig(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\plots\iv_skew_plot.png")
+    plt.savefig(plot_path)
     plt.close()
 
     plot_skew = plot_skew.sort_values("Date", ascending=False)
@@ -184,22 +190,20 @@ def track_daily_spx_skew():
     skew_df = pd.DataFrame({'Date': [today], 'C IV':[calliv], 'C Strike':[call_strike],'P IV':[putiv],'P Strike':[put_strike], 'SPY Skew': [skew]})
 
     try:
-        skew_df.to_csv(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\spx_skew.csv', mode='a', header=False, index=False)
+        skew_df.to_csv(skew_csv_path, mode='a', header=False, index=False)
     except FileNotFoundError:
-        skew_df.to_csv(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\spx_skew.csv', mode='w', header=True, index=False)
-
+        skew_df.to_csv(skew_csv_path, mode='w', header=True, index=False)
     df, signal = plot()
     return df, signal
 
 if __name__=="__main__":
     df, signal = track_daily_spx_skew()
-    plot_path = r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\plots\iv_skew_plot.png"  # Ensure this path is correct
-
     # Email configuration
-    SMTP_SERVER = "smtp.gmail.com"  # Change based on your email provider
+    # Email configuration
+    SMTP_SERVER = "smtp.gmail.com"  # Gmail SMTP server
     SMTP_PORT = 587
-    SENDER_EMAIL = "casselrobson93@gmail.com"
-    SENDER_PASSWORD = "lajhhtqevwvomcts"  # Use an app password if using Gmail
+    SENDER_EMAIL = "mmisic03@gmail.com"
+    SENDER_PASSWORD = "ynbu lndn lfxx sulk"  
     RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca"]
     SUBJECT = f"Daily Skew Sentiment - {signal} - {datetime.today().strftime('%Y-%m-%d')}"
 
