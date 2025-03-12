@@ -3,12 +3,16 @@ from dotenv import load_dotenv
 import numpy as np
 import pandas as pd
 import time
+import ssl
+
+ssl._create_default_https_context = ssl._create_stdlib_context
 max_requests_per_minute = 150
 delay_per_request = 60/max_requests_per_minute
 load_dotenv()
-ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
-ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET")
-ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL")
+
+ALPACA_API_KEY="PKSWP8A9QH87I5DX69Y4"
+ALPACA_API_SECRET="we0Fo1a7UmijE45Z3rWYkZjXqnsfFg3B8pwrnbdC"
+ALPACA_BASE_URL="https://paper-api.alpaca.markets/"
 
 from alpaca.data.requests import OptionLatestQuoteRequest, OptionSnapshotRequest, OptionChainRequest
 from alpaca.data.historical import OptionHistoricalDataClient, StockHistoricalDataClient
@@ -30,6 +34,14 @@ from email import encoders
 from datetime import datetime, timedelta
 
 warnings.filterwarnings('ignore')
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+skew_csv_path = os.path.join(script_dir, "dispersion.csv")
+plot_dir = os.path.join(script_dir, "plots")
+plot_path = os.path.join(plot_dir, "dispersion_plot.png")
+implied_vols_path = os.path.join(script_dir, "implied_vols.pkl")
+market_caps_dir = os.path.join(script_dir, "market_caps")
+market_caps_path = os.path.join(market_caps_dir, "market_caps.xlsx")
 
 class Util:
     @staticmethod
@@ -63,7 +75,7 @@ def get_chain_snapshot(symbol, spot, expiry):
         expiration_date=expiry,
         strike_price_gte=str(spot-5),
         strike_price_lte=str(spot+5),
-
+        verify=False
     )
     )
 
@@ -163,7 +175,7 @@ def fetch_mid_iv(symbol, exp, spots):
     return mid_iv
 
 def fetch_spx_iv(exp):
-    request = StockLatestQuoteRequest(symbol_or_symbols="SPY")
+    request = StockLatestQuoteRequest(symbol_or_symbols="SPY", verify=False)
     data = stock_historical_data_client.get_stock_latest_quote(request)
     ask = data["SPY"].ask_price
     bid = data["SPY"].bid_price
@@ -184,7 +196,7 @@ def fetch_spx_iv(exp):
     return mid_iv
 
 def get_atm_constituent_options(sp, exp):
-    request = StockLatestQuoteRequest(symbol_or_symbols=sp)
+    request = StockLatestQuoteRequest(symbol_or_symbols=sp,verify=False)
     data = stock_historical_data_client.get_stock_latest_quote(request)
 
     df = pd.DataFrame.from_dict(data, orient='index')
@@ -233,7 +245,7 @@ def get_atm_constituent_options(sp, exp):
     return implied_vols
 
 def plot():
-    disp = pd.read_csv(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\dispersion.csv")
+    disp = pd.read_csv(skew_csv_path)
     disp.columns = ['Date', 'SPX ATM IV', 'Constit. ATM IV']
     disp['Dispersion'] = disp['SPX ATM IV']-disp['Constit. ATM IV']
     disp[['Dispersion', 'SPX ATM IV', 'Constit. ATM IV']] *= 100
@@ -298,7 +310,7 @@ def plot():
     # Save plot
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.3)  # Adjust space between the subplots
-    plt.savefig(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\plots\dispersion_plot.png", bbox_inches="tight")
+    plt.savefig(plot_path, bbox_inches="tight")
     plt.close()
     return disp
 
@@ -322,7 +334,7 @@ def signal(window, implied_vols, long_signal, short_signal, sp):
     if long_signal or short_signal:
         end = datetime.today().date()
         start = end - timedelta(days=90)
-        stock_bars_request = StockBarsRequest(symbol_or_symbols=sp+['SPY'], timeframe=TimeFrame.Day, start=start, end=end)
+        stock_bars_request = StockBarsRequest(symbol_or_symbols=sp+['SPY'], timeframe=TimeFrame.Day, start=start, end=end, verify=False)
         stock_bars = stock_historical_data_client.get_stock_bars(stock_bars_request)
         constituent_bars = stock_bars.df
         constituent_barst = constituent_bars.reset_index()
@@ -374,9 +386,9 @@ if __name__=="__main__":
     spx_iv = fetch_spx_iv(exp)
 
     implied_vols = get_atm_constituent_options(sp, exp)
-    implied_vols.to_pickle(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\implied_vols.pkl')
-    implied_vols = pd.read_pickle(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\implied_vols.pkl')
-    mkt_caps = pd.read_excel(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\market_caps\market_caps.xlsx", sheet_name='Market Caps')
+    implied_vols.to_pickle(implied_vols_path)
+    implied_vols = pd.read_pickle(implied_vols_path)
+    mkt_caps = pd.read_excel(market_caps_path, sheet_name='Market Caps')
     mkt_caps = mkt_caps[["Ticker", 'Market Cap']].rename(columns={'Ticker': 'Symbol'}).set_index('Symbol')
     implied_vols = implied_vols.set_index('Symbol')
 
@@ -388,9 +400,9 @@ if __name__=="__main__":
     dispersion_df = pd.DataFrame({"Date":[datetime.today().date().strftime("%Y-%m-%d")], "SPX ATM IV":[spx_iv], "Constit. ATM IV":[weighted_sum_IV]})
 
     try:
-        dispersion_df.to_csv(r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\dispersion.csv", mode='a', header=False, index=False)
+        dispersion_df.to_csv(skew_csv_path, mode='a', header=False, index=False)
     except FileNotFoundError:
-        dispersion_df.to_csv(r'C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\dispersion.csv', mode='w', header=True, index=False)
+        dispersion_df.to_csv(skew_csv_path, mode='w', header=True, index=False)
 
     disp = plot()
     long_signal = disp.loc[len(disp)-1, "Long Dispersion"]
@@ -406,12 +418,11 @@ if __name__=="__main__":
     else:
         signal_string = "No Action"
 
-    plot_path = r"C:\Users\Cassel Robson\skewmonitor\venv\skewmonitor\plots\dispersion_plot.png"
     # Email configuration
-    SMTP_SERVER = "smtp.gmail.com"  # Change based on your email provider
+    SMTP_SERVER = "smtp.gmail.com"  # Gmail SMTP server
     SMTP_PORT = 587
-    SENDER_EMAIL = "casselrobson93@gmail.com"
-    SENDER_PASSWORD = "lajhhtqevwvomcts"  # Use an app password if using Gmail
+    SENDER_EMAIL = "mmisic03@gmail.com"
+    SENDER_PASSWORD = "ynbu lndn lfxx sulk"  # Use an app password if required
     RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca"]
     SUBJECT = f"Daily Dispersion - {signal_string} - {datetime.today().strftime('%Y-%m-%d')}"
     
@@ -425,7 +436,7 @@ if __name__=="__main__":
         # Create email message
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
-        msg["To"] = ", ".join(RECIPIENT_EMAILS)
+        msg["To"] = ", ".join(RECIPIENT_EMAILS) 
         msg["Subject"] = SUBJECT
 
         # Email body
@@ -451,7 +462,7 @@ if __name__=="__main__":
         # Create email message
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
-        msg["To"] = RECIPIENT_EMAILS
+        msg["To"] = ", ".join(RECIPIENT_EMAILS) 
         msg["Subject"] = SUBJECT
 
         # Email body
