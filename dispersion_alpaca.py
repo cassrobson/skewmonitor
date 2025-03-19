@@ -383,6 +383,7 @@ def signal(window, implied_vols, long_signal, short_signal, sp):
 if __name__=="__main__":
     sp = get_constituents()
     exp = get_next_third_friday()
+    exp='2025-04-17'
     spx_iv = fetch_spx_iv(exp)
 
     implied_vols = get_atm_constituent_options(sp, exp)

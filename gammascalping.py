@@ -20,16 +20,10 @@ def fetch_options_data(ticker, expiration):
 def get_position(symbol):
     # Request positions
     positions = ib.positions()
-
-    # Specify the ticker symbol
     
-
-    # Find the position size for the specified ticker
-    position_size = next((pos.position for pos in positions if pos.contract.symbol == symbol), 0)
-
+    # Find the position size for the specified ticker, ensuring it's an equity position
+    position_size = next((pos.position for pos in positions if pos.contract.symbol == symbol and pos.contract.secType == "STK"), 0)
     
-
-    # Disconnect
     return position_size
 
 def place_market_order(symbol, quantity):
