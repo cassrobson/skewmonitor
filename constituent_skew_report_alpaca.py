@@ -27,6 +27,8 @@ delay_per_request = 60/max_requests_per_minute
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 skew_csv_path = os.path.join(script_dir, "constituent_skew.csv")
+market_caps_dir = os.path.join(script_dir, "market_caps")
+market_caps_path = os.path.join(market_caps_dir, "market_caps.xlsx")
 
     
 def parse_option_symbol(symbol):
@@ -157,35 +159,46 @@ def get_constituents():
 
     return sp500_constituents
 
-def largest_skew_changes(sp, error_symbols):
+def largest_skew_changes(sp, error_symbols, mkt_caps):
     skew = pd.read_csv(skew_csv_path)
+
     skew.columns = ['Date']+[x for x in sp if x not in error_symbols]
     skew = skew.set_index('Date')
     skew = skew - skew.shift(1)
     skew = skew.tail(1).transpose()
-    print(skew)
-    exit()
+
     skew.columns = ['Skew Change']
     skew = skew.sort_values('Skew Change')
 
-    bearish = skew.tail(3).sort_values('Skew Change', ascending=False)
-    bullish = skew.head(3)
+    mkt_caps = mkt_caps.reset_index()
+    skew = skew.merge(mkt_caps, left_index=True, right_on='Symbol')
+    skew = skew.set_index("Symbol")
+    skew["Market Cap"] = skew["Market Cap"].div(1_000_000).astype(int).apply(lambda x: f"{x:,}M")
+
+    # Ensure Symbol remains the index
+    skew = skew.rename_axis("Symbol")
+
+    bearish = skew.tail(10).sort_values('Skew Change', ascending=False)
+    bullish = skew.head(10)
 
     return bearish, bullish
 
 def track_daily_constituent_skew():
     sp = get_constituents()
+    sp = sp
     data = {}
     error_symbols = []
     for i, symbol in enumerate(sp, start=1):
         try:
-            print(symbol)
             snap = get_option_chain_snap(symbol)
+
 
             expiry = get_next_third_friday()
             expiry_dt = pd.to_datetime(expiry, format="%Y-%m-%d").date()
+            expiry_dt = datetime(2025, 4, 17)
             
             skew = find_skew(snap, expiry_dt)
+            print(symbol, skew)
             data[symbol] = skew
 
         except Exception as e:
@@ -205,8 +218,9 @@ def track_daily_constituent_skew():
         skew_df.to_csv(skew_csv_path, mode='a', header=False, index=True)
     except FileNotFoundError:
         skew_df.to_csv(skew_csv_path, mode='w', header=True, index=True)
-    
-    bearish, bullish = largest_skew_changes(sp, error_symbols)
+    mkt_caps = pd.read_excel(market_caps_path, sheet_name='Market Caps')
+    mkt_caps = mkt_caps[["Ticker", 'Market Cap']].rename(columns={'Ticker': 'Symbol'}).set_index('Symbol')
+    bearish, bullish = largest_skew_changes(sp, error_symbols, mkt_caps)
     
     return bearish, bullish
 
@@ -218,7 +232,7 @@ if __name__=="__main__":
     SMTP_PORT = 587
     SENDER_EMAIL = "casselrobson93@gmail.com"
     SENDER_PASSWORD = "lajhhtqevwvomcts"  
-    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca"]
+    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca", "mihaiposea1@gmail.com"]
     SUBJECT = f"Daily Constituent Skew - {datetime.today().strftime('%Y-%m-%d')}"
 
     # Convert DataFrame to HTML table
