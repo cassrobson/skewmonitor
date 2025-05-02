@@ -252,8 +252,8 @@ def plot():
     disp['RSI'] = calculate_rsi(disp['Dispersion'])
     disp['MACD'], disp['Signal Line'] = calculate_macd(disp['Dispersion'])
 
-    disp['Long Dispersion'] = (disp['RSI'] < 30) & (disp['MACD'] > disp['Signal Line'])  # Buy signal (RSI < 30 and MACD > Signal Line)
-    disp['Short Dispersion'] = (disp['RSI'] > 70) & (disp['MACD'] < disp['Signal Line'])    
+    disp['Long Dispersion'] = (disp['RSI'] < 45) & (disp['MACD'] > disp['Signal Line'])  # Buy signal (RSI < 30 and MACD > Signal Line)
+    disp['Short Dispersion'] = (disp['RSI'] > 55) & (disp['MACD'] < disp['Signal Line'])    
     df = disp
     df['Date'] = pd.to_datetime(df['Date'])
 
@@ -383,7 +383,7 @@ def signal(window, implied_vols, long_signal, short_signal, sp):
 if __name__=="__main__":
     sp = get_constituents()
     exp = get_next_third_friday()
-    exp='2025-04-17'
+    exp='2025-05-16'
     spx_iv = fetch_spx_iv(exp)
 
     implied_vols = get_atm_constituent_options(sp, exp)
@@ -424,7 +424,7 @@ if __name__=="__main__":
     SMTP_PORT = 587
     SENDER_EMAIL = "casselrobson93@gmail.com"
     SENDER_PASSWORD = "lajhhtqevwvomcts" # Use an app password if required
-    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca", "mihaiposea1@gmail.com"]
+    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca", "mihaiposea1@gmail.com", 'shane.shamku@gmail.com']
     SUBJECT = f"Daily Dispersion - {signal_string} - {datetime.today().strftime('%Y-%m-%d')}"
     
     disp.iloc[:, 1:8] = disp.iloc[:, 1:8].round(2)

@@ -123,7 +123,7 @@ def get_next_third_friday():
     return third_friday_date.strftime('%Y-%m-%d')
 
 def find_skew(df, expiry_dt):
-    expiry_dt = datetime(2025, 4, 17).date()
+    expiry_dt = datetime(2025, 5, 16).date()
     df = df[df['expiry_date']==expiry_dt]
     
     # Convert delta column to numeric, handling potential NaNs
@@ -161,8 +161,20 @@ def get_constituents():
 
 def largest_skew_changes(sp, error_symbols, mkt_caps):
     skew = pd.read_csv(skew_csv_path)
+    new_columns = ['Date'] + [x for x in sp if x not in error_symbols]
 
-    skew.columns = ['Date']+[x for x in sp if x not in error_symbols]
+    # Debugging prints
+    print(f"Original column count: {len(skew.columns)}")
+    print(f"New column count: {len(new_columns)}")
+
+    # Ensure length matches
+    if len(skew.columns) == len(new_columns):
+        skew.columns = new_columns
+    else:
+        print("Column length mismatch! Adjusting...")
+        skew = skew.iloc[:, :len(new_columns)]  # Truncate excess columns
+        skew.columns = new_columns[:len(skew.columns)]  # Trim column names if needed
+        
     skew = skew.set_index('Date')
     skew = skew - skew.shift(1)
     skew = skew.tail(1).transpose()
@@ -195,10 +207,9 @@ def track_daily_constituent_skew():
 
             expiry = get_next_third_friday()
             expiry_dt = pd.to_datetime(expiry, format="%Y-%m-%d").date()
-            expiry_dt = datetime(2025, 4, 17)
+            expiry_dt = datetime(2025, 5, 16)
             
             skew = find_skew(snap, expiry_dt)
-            print(symbol, skew)
             data[symbol] = skew
 
         except Exception as e:
@@ -218,6 +229,8 @@ def track_daily_constituent_skew():
         skew_df.to_csv(skew_csv_path, mode='a', header=False, index=True)
     except FileNotFoundError:
         skew_df.to_csv(skew_csv_path, mode='w', header=True, index=True)
+
+
     mkt_caps = pd.read_excel(market_caps_path, sheet_name='Market Caps')
     mkt_caps = mkt_caps[["Ticker", 'Market Cap']].rename(columns={'Ticker': 'Symbol'}).set_index('Symbol')
     bearish, bullish = largest_skew_changes(sp, error_symbols, mkt_caps)
@@ -232,7 +245,7 @@ if __name__=="__main__":
     SMTP_PORT = 587
     SENDER_EMAIL = "casselrobson93@gmail.com"
     SENDER_PASSWORD = "lajhhtqevwvomcts"  
-    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca", "mihaiposea1@gmail.com"]
+    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca", "mihaiposea1@gmail.com", 'shane.shamku@gmail.com']
     SUBJECT = f"Daily Constituent Skew - {datetime.today().strftime('%Y-%m-%d')}"
 
     # Convert DataFrame to HTML table

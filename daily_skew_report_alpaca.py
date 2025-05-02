@@ -112,7 +112,7 @@ def get_next_third_friday():
     return third_friday_date.strftime('%Y-%m-%d')
 
 def find_skew(df, expiry_dt):
-    expiry_dt = datetime(2025,4,17).date()
+    expiry_dt = datetime(2025,5,16).date()
     df = df[df['expiry_date']==expiry_dt]
     
     # Convert delta column to numeric, handling potential NaNs
@@ -205,7 +205,7 @@ if __name__=="__main__":
     SMTP_PORT = 587
     SENDER_EMAIL = "casselrobson93@gmail.com"
     SENDER_PASSWORD = "lajhhtqevwvomcts"  
-    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca", "mihaiposea1@gmail.com"]
+    RECIPIENT_EMAILS = ["casselrobson19@gmail.com", "misi2700@mylaurier.ca", "mihaiposea1@gmail.com", 'shane.shamku@gmail.com']
     SUBJECT = f"Daily Skew Sentiment - {signal} - {datetime.today().strftime('%Y-%m-%d')}"
 
     # Convert DataFrame to HTML table
