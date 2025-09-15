@@ -123,7 +123,7 @@ def get_next_third_friday():
     return third_friday_date.strftime('%Y-%m-%d')
 
 def find_skew(df, expiry_dt):
-    expiry_dt = datetime(2025, 9, 19).date()
+    expiry_dt = datetime(2025, 10, 17).date()
     df = df[df['expiry_date']==expiry_dt]
     
     # Convert delta column to numeric, handling potential NaNs
@@ -207,7 +207,7 @@ def track_daily_constituent_skew():
 
             expiry = get_next_third_friday()
             expiry_dt = pd.to_datetime(expiry, format="%Y-%m-%d").date()
-            expiry_dt = datetime(2025, 9, 19)
+            expiry_dt = datetime(2025, 10, 17)
             
             skew = find_skew(snap, expiry_dt)
             data[symbol] = skew
