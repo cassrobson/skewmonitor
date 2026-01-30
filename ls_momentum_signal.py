@@ -178,12 +178,10 @@ def adjust_prices_for_splits_inferred(px: pd.DataFrame, max_den=10, tol=0.01, mi
     return out
 
 if __name__ == "__main__":
-    # constituents = get_constituents()
+    constituents = get_constituents()
 
-    # df = retrieve_daily_close_prices_for_constituents(constituents)
-    # df.to_pickle("sp500_daily_close_prices.pkl")
+    df = retrieve_daily_close_prices_for_constituents(constituents)
 
-    df = pd.read_pickle("sp500_daily_close_prices.pkl")
     df = adjust_prices_for_splits_inferred(df, min_jump=0.12, max_den=20, tol=0.015)
 
     prices = df.copy()
