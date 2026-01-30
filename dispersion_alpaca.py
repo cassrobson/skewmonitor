@@ -149,12 +149,14 @@ def get_next_third_friday():
 def get_constituents():
     sp500 = 'https://yfiua.github.io/index-constituents/constituents-sp500.csv'
 
+    
     sp500 = pd.read_csv(sp500)
+
     sp500 = sp500.sort_values("Symbol", ascending=True)
     sp500_constituents = sp500['Symbol'].to_list()
     sp500_constituents = [x.replace("-",".") for x in sp500_constituents]
     sp500_constituents = [x for x in sp500_constituents if x != "BF.B"]
-
+    
     return sp500_constituents
 
 def fetch_mid_iv(symbol, exp, spots):
@@ -383,7 +385,7 @@ def signal(window, implied_vols, long_signal, short_signal, sp):
 if __name__=="__main__":
     sp = get_constituents()
     exp = get_next_third_friday()
-    exp='2025-10-17'
+    exp='2026-02-20'
     spx_iv = fetch_spx_iv(exp)
 
     implied_vols = get_atm_constituent_options(sp, exp)
