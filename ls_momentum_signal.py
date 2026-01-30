@@ -60,7 +60,7 @@ def retrieve_daily_close_prices_for_constituents(constituents):
 
     # Calculate date range (e.g., last 252 trading days ~ 1 year)
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
+    start_date = end_date - timedelta(days=120)
 
     for i, symbol in enumerate(constituents, start=1):
         try:
@@ -73,8 +73,6 @@ def retrieve_daily_close_prices_for_constituents(constituents):
             )
 
             bars = stock_historical_data_client.get_stock_bars(request_params)
-            print(bars)
-            exit()
             # Convert to dataframe and extract close prices
             df_bars = bars.df
             if not df_bars.empty:
@@ -186,7 +184,7 @@ if __name__ == "__main__":
 
     prices = df.copy()
 
-    df = calculate_momentum_factor(df, lookback_period=365, exclude_recent_days=30)
+    df = calculate_momentum_factor(df, lookback_period=90, exclude_recent_days=7)
 
     
     mkt_caps = pd.read_excel(market_caps_path, sheet_name='Market Caps')
