@@ -112,7 +112,7 @@ def get_next_third_friday():
     return third_friday_date.strftime('%Y-%m-%d')
 
 def find_skew(df, expiry_dt):
-    expiry_dt = datetime(2026, 2, 20).date()
+    expiry_dt = datetime(2026, 4, 17).date()
     df = df[df['expiry_date']==expiry_dt]
     
     # Convert delta column to numeric, handling potential NaNs

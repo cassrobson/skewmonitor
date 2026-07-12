@@ -192,7 +192,7 @@ if __name__ == "__main__":
     
     final_df = df.join(mkt_caps, how='left')
     final_df['momentum today'] = final_df['momentum today'] * 100
-    final_df = final_df.rename(columns={'momentum today': '12-1M Momentum'})
+    final_df = final_df.rename(columns={'momentum today': '3M-1W Momentum'})
 
     def format_market_cap(x):
         if pd.isna(x):
@@ -208,13 +208,13 @@ if __name__ == "__main__":
     # Sort still uses the numeric column
 
 
-    pos_momentum = final_df.head(10).sort_values("Market Cap", ascending=False).drop(columns=["Market Cap"]).rename(columns={"Market Cap (fmt)": "Market Cap"})
-    neg_momentum = final_df.tail(10).sort_values("Market Cap", ascending=False).drop(columns=["Market Cap"]).rename(columns={"Market Cap (fmt)": "Market Cap"})
+    pos_momentum = final_df.head(20).sort_values("Market Cap", ascending=False).drop(columns=["Market Cap"]).rename(columns={"Market Cap (fmt)": "Market Cap"})
+    neg_momentum = final_df.tail(20).sort_values("Market Cap", ascending=False).drop(columns=["Market Cap"]).rename(columns={"Market Cap (fmt)": "Market Cap"})
     
-    pos_momentum["12-1M Momentum"] = pos_momentum["12-1M Momentum"].map(
+    pos_momentum["3M-1W Momentum"] = pos_momentum["3M-1W Momentum"].map(
     lambda x: f"{x:.2f}%" if pd.notna(x) else "—"
 )
-    neg_momentum["12-1M Momentum"] = neg_momentum["12-1M Momentum"].map(
+    neg_momentum["3M-1W Momentum"] = neg_momentum["3M-1W Momentum"].map(
     lambda x: f"{x:.2f}%" if pd.notna(x) else "—"
 )
 
@@ -261,9 +261,9 @@ if __name__ == "__main__":
         </style>
     </head>
     <body>
-        <h2>Constituents with highest 12-1M momentum</h2>
+        <h2>Constituents with highest 3M-1W momentum</h2>
         {winners_html}
-        <h2>Constituents with lowest 12-1M momentum</h2>
+        <h2>Constituents with lowest 3M-1W momentum</h2>
         {losers_html}
     </body>
     </html>
