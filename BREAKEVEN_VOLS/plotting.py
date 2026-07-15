@@ -3,6 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.patches import Patch
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 -- registers the '3d' projection
 
 
@@ -215,8 +216,8 @@ def plot_breakeven_vol_distribution(sigma_be_array, sigma_hat=None,
 
     mean_be = np.mean(sigma_be_array)
     median_be = np.median(sigma_be_array)
-    ax.axvline(mean_be, color="tab:green", linewidth=1.5, label=f"Mean = {mean_be:.2%}")
-    ax.axvline(median_be, color="tab:orange", linewidth=1.5, label=f"Median = {median_be:.2%}")
+    ax.axvline(median_be, color="black", linewidth=1.8, label=f"Median = {median_be:.2%}")
+    ax.axvline(mean_be, color="tab:green", linestyle="--", linewidth=1.2, label=f"Mean = {mean_be:.2%}")
 
     if sigma_hat is not None:
         ax.axvline(sigma_hat, color="tab:red", linestyle="--", linewidth=1.5,
@@ -294,8 +295,10 @@ def plot_breakeven_vol_distribution_grid(results_by_option,
         sigma_be_array = results_by_option[label]['sigma_be_array']
         sigma_be_array = sigma_be_array[~np.isnan(sigma_be_array)]
         ax.hist(sigma_be_array, bins=bins, color="tab:blue", alpha=0.75, edgecolor="white")
+        median_be = np.median(sigma_be_array)
         mean_be = sigma_be_array.mean()
-        ax.axvline(mean_be, color="tab:red", linestyle="--", linewidth=1.5, label=f"Mean = {mean_be:.2%}")
+        ax.axvline(median_be, color="black", linewidth=1.8, label=f"Median = {median_be:.2%}")
+        ax.axvline(mean_be, color="tab:red", linestyle="--", linewidth=1.2, label=f"Mean = {mean_be:.2%}")
         ax.set_title(label)
         ax.set_xlabel("Breakeven volatility")
         ax.set_ylabel("Count")
@@ -318,26 +321,48 @@ def plot_breakeven_vol_distribution_grid(results_by_option,
 
 def plot_breakeven_vol_smile(results_by_option, title="Breakeven Volatility Smile", save_path=None):
     """
-    Mean breakeven vol vs moneyness across the option set (the "smile"),
-    with error bars showing +/- 1 std across bootstrap samples and each
-    point labeled with its strike/type and vol level.
+    Box-and-whisker plot of breakeven vol by moneyness (the "smile") -- one
+    box per option showing the full bootstrap distribution (median, IQR,
+    whiskers, outlier points), with a red diamond marking the mean and a
+    text label giving its exact value above each box.
 
     results_by_option -- dict of label -> {'sigma_be_array': array, 'moneyness': float}
     """
     items = sorted(results_by_option.items(), key=lambda kv: kv[1]['moneyness'])
     labels = [label for label, _ in items]
     moneyness = np.array([r['moneyness'] for _, r in items])
+    data = [r['sigma_be_array'][~np.isnan(r['sigma_be_array'])] for _, r in items]
+    medians = np.array([np.nanmedian(r['sigma_be_array']) for _, r in items])
     means = np.array([np.nanmean(r['sigma_be_array']) for _, r in items])
-    stds = np.array([np.nanstd(r['sigma_be_array']) for _, r in items])
+    tops = np.array([d.max() if len(d) else np.nan for d in data])
 
-    fig, ax = plt.subplots(figsize=(9, 6))
-    ax.errorbar(moneyness, means, yerr=stds, fmt="o-", color="tab:blue", ecolor="tab:blue",
-                elinewidth=1, capsize=4, markersize=7)
+    spacing = np.min(np.diff(np.sort(moneyness))) if len(moneyness) > 1 else 0.05
+    width = spacing * 0.6
 
-    for x, y, label in zip(moneyness, means, labels):
-        ax.annotate(f"{label}\n{y:.2%}", (x, y), textcoords="offset points", xytext=(0, 12),
-                    ha="center", fontsize=9)
+    fig, ax = plt.subplots(figsize=(10, 6.5))
+    ax.boxplot(
+        data, positions=moneyness, widths=width, patch_artist=True,
+        showmeans=True,
+        meanprops=dict(marker="D", markerfacecolor="none", markeredgecolor="tab:red", markersize=6),
+        medianprops=dict(color="black", linewidth=1.8),
+        boxprops=dict(facecolor="tab:blue", alpha=0.5),
+        whiskerprops=dict(color="tab:blue"),
+        capprops=dict(color="tab:blue"),
+        flierprops=dict(marker="o", markersize=3, alpha=0.4),
+    )
 
+    # median is the primary reported statistic (robust to the occasional
+    # degenerate/near-zero draw at deep-OTM, short-dated cells); mean is
+    # labeled separately beside its own diamond marker so it doesn't stack
+    # the annotation tall enough to collide with the chart title
+    for x, top, y_med, y_mean, label in zip(moneyness, tops, medians, means, labels):
+        ax.annotate(f"{label}\nmedian={y_med:.2%}", (x, top), textcoords="offset points", xytext=(0, 10),
+                    ha="center", fontsize=8.5, color="black", fontweight="bold")
+        ax.annotate(f"mean={y_mean:.2%}", (x, y_mean), textcoords="offset points", xytext=(24, 0),
+                    ha="left", va="center", fontsize=7.5, color="tab:red")
+
+    ax.set_xlim(moneyness.min() - width * 2, moneyness.max() + width * 2)
+    ax.set_xticks(moneyness)
     ax.set_xlabel("Moneyness (K / S)")
     ax.set_ylabel("Breakeven volatility")
     ax.set_title(title)
@@ -405,3 +430,145 @@ def plot_breakeven_vol_surface(moneyness_levels, expiry_labels, surface, highlig
     plt.show()
 
     return fig, ax
+
+
+def plot_vol_surface_comparison(moneyness_levels, expiry_labels, modeled_surface, market_surface,
+                                 highlight_points=None, title="Modeled Breakeven Vol vs Market Implied Vol",
+                                 save_path=None):
+    """
+    Overlays the modeled breakeven-vol surface (green) and the market
+    implied-vol surface (purple) on the same moneyness/expiry axes for
+    direct visual comparison. Cells that are NaN in either surface (e.g. no
+    listed contract matched, or a degenerate breakeven-vol cell) just leave
+    a gap in that surface.
+    """
+    X, Y = np.meshgrid(moneyness_levels, np.arange(len(expiry_labels)))
+
+    fig = plt.figure(figsize=(13, 9))
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.plot_surface(X, Y, np.asarray(modeled_surface), color="tab:green", alpha=0.55,
+                     edgecolor="black", linewidth=0.2, antialiased=True)
+    ax.plot_surface(X, Y, np.asarray(market_surface), color="tab:purple", alpha=0.55,
+                     edgecolor="black", linewidth=0.2, antialiased=True)
+
+    ax.set_xticks(moneyness_levels)
+    ax.set_xticklabels([f"{m:.0%}" for m in moneyness_levels], fontsize=7, rotation=45, ha="right")
+    ax.set_yticks(np.arange(len(expiry_labels)))
+    ax.set_yticklabels(expiry_labels, fontsize=8)
+    ax.zaxis.set_major_formatter(mticker.FuncFormatter(lambda z, _: f"{z:.0%}"))
+
+    ax.set_xlabel("Moneyness (K/S)", labelpad=14)
+    ax.set_ylabel("Expiry", labelpad=10)
+    ax.set_zlabel("Volatility", labelpad=8)
+    ax.set_title(title)
+    ax.view_init(elev=22, azim=-60)
+
+    legend_handles = [
+        Patch(facecolor="tab:green", alpha=0.55, label="Modeled breakeven vol"),
+        Patch(facecolor="tab:purple", alpha=0.55, label="Market implied vol"),
+    ]
+    if highlight_points:
+        expiry_index = {label: idx for idx, label in enumerate(expiry_labels)}
+        hx = [m for m, _, _ in highlight_points]
+        hy = [expiry_index[label] for _, label, _ in highlight_points]
+        hz = [v for _, _, v in highlight_points]
+        ax.scatter(hx, hy, hz, color="red", s=70, depthshade=False, zorder=10)
+        legend_handles.append(Patch(facecolor="red", label="Requested strikes"))
+
+    ax.legend(handles=legend_handles, loc="upper left")
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, ax
+
+
+def plot_variance_risk_premium_heatmap(moneyness_levels, expiry_labels, vrp_vol,
+                                        title="Variance Risk Premium (Implied - Breakeven Vol)",
+                                        save_path=None):
+    """
+    Heatmap of VRP in vol-point terms across the (expiry x moneyness) grid,
+    diverging colormap centered at 0: positive (red) means market implied
+    vol trades above modeled breakeven vol (the usual direction -- options
+    priced with a premium over what historical hedging would have needed);
+    negative (blue) means the reverse.
+    """
+    vrp_vol = np.asarray(vrp_vol)
+    finite = vrp_vol[np.isfinite(vrp_vol)]
+    vmax = np.max(np.abs(finite)) if finite.size else 0.01
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    im = ax.imshow(vrp_vol, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
+
+    ax.set_xticks(np.arange(len(moneyness_levels)))
+    ax.set_xticklabels([f"{m:.0%}" for m in moneyness_levels], rotation=45, ha="right")
+    ax.set_yticks(np.arange(len(expiry_labels)))
+    ax.set_yticklabels(expiry_labels)
+
+    for i in range(vrp_vol.shape[0]):
+        for j in range(vrp_vol.shape[1]):
+            val = vrp_vol[i, j]
+            if np.isnan(val):
+                continue
+            ax.text(j, i, f"{val:+.1%}", ha="center", va="center", fontsize=7,
+                    color="white" if abs(val) > vmax * 0.5 else "black")
+
+    ax.set_xlabel("Moneyness (K/S)")
+    ax.set_ylabel("Expiry")
+    ax.set_title(title)
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("Implied vol - Breakeven vol")
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, ax
+
+
+def plot_smile_comparison_grid(moneyness_levels, expiry_labels, modeled_surface, market_surface,
+                                title="Breakeven Vol vs Market Implied Vol", save_path=None):
+    """
+    Small-multiples grid, one panel per expiry, each a plain two-line smile
+    comparison vs moneyness: modeled breakeven vol against market implied
+    vol, on the same axes so the shapes are directly comparable.
+    """
+    n = len(expiry_labels)
+    ncols = 3
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5 * ncols, 3.8 * nrows), sharex=True)
+    axes = np.asarray(axes).flatten()
+
+    for i, (ax, label) in enumerate(zip(axes, expiry_labels)):
+        ax.plot(moneyness_levels, modeled_surface[i], color="tab:green", marker="o", markersize=4,
+                linewidth=1.8, label="Breakeven vol (modeled, median)")
+        ax.plot(moneyness_levels, market_surface[i], color="tab:purple", marker="s", markersize=4,
+                linewidth=1.8, label="Implied vol (market)")
+        ax.set_title(label)
+        ax.set_xlabel("Moneyness (K/S)")
+        ax.set_ylabel("Volatility")
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0%}"))
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{y:.0%}"))
+        ax.legend(fontsize=8)
+
+    for ax in axes[n:]:
+        ax.axis("off")
+
+    fig.suptitle(title)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, axes
