@@ -230,13 +230,16 @@ class OptionContract:
         (e.g. one bootstrap draw) since there's no longer a single canonical
         path on the option itself. Brackets the search around sigma_hat.
 
-        Raises ValueError if no bracket can be found, OR if the option is
-        degenerately worthless across the entire bracket (|P&L| < degenerate_tol
-        at both endpoints) -- e.g. very short-dated, deep OTM combinations
-        where the option value floors to exact 0.0 in float64 for any
-        realistic sigma. In that regime brentq would otherwise "solve" for
-        whatever sigma happens to cross a floating-point underflow boundary,
-        which is numerical noise, not a meaningful breakeven vol.
+        Raises ValueError if no bracket can be found, OR if either bracket
+        endpoint is itself degenerately worthless (|P&L| < degenerate_tol)
+        -- e.g. very short-dated, deep OTM combinations where the option
+        value floors to exact 0.0 in float64 at low sigma. In that regime
+        f(lo) == 0.0 exactly, so brentq would trivially return lo as "the
+        root" regardless of the path -- that's a floating-point underflow
+        boundary, not a meaningful breakeven vol. Checking only the worse
+        of the two endpoints (the old `max` check) misses this: bracket
+        expansion can easily push the *other* endpoint's P&L to something
+        large and non-degenerate while lo stays pinned at exact 0.0.
         """
         dt = self.dt if dt is None else dt
         if sigma_bounds is None:
@@ -261,11 +264,14 @@ class OptionContract:
                 f"after {expansions} expansions (P&L(lo)={f_lo:.4f}, P&L(hi)={f_hi:.4f})."
             )
 
-        if max(abs(f_lo), abs(f_hi)) < degenerate_tol:
+        if min(abs(f_lo), abs(f_hi)) < degenerate_tol:
             raise ValueError(
-                f"Option is degenerately worthless across the entire sigma range "
-                f"[{lo:.4f}, {hi:.4f}] (|P&L| < {degenerate_tol}) -- no meaningful "
-                f"breakeven vol exists (likely deep OTM / very short-dated)."
+                f"Bracket endpoint in sigma range [{lo:.4f}, {hi:.4f}] is "
+                f"degenerately worthless (|P&L(lo)|={abs(f_lo):.2e}, "
+                f"|P&L(hi)|={abs(f_hi):.2e}, threshold={degenerate_tol}) -- "
+                f"brentq would just return that endpoint as a spurious "
+                f"floating-point-underflow 'root', not a meaningful breakeven "
+                f"vol (likely deep OTM / very short-dated)."
             )
 
         return brentq(total_pnl, lo, hi)
@@ -627,7 +633,7 @@ def main():
     # ("stress") periods instead of the full 10-year history. All outputs
     # get a "_stress" filename suffix so the normal-sampling plots are never
     # overwritten -- flip this, rerun, and compare the two sets side by side.
-    STRESS_SAMPLING = True
+    STRESS_SAMPLING = False
     STRESS_PERCENTILE = 75   # "stress" = top quartile of trailing 21d realized vol
     STRESS_DIRECTION = "down"  # "down" = selloffs only, "up" = rallies only, "any" = either
 
@@ -736,7 +742,7 @@ def main():
         save_path=out("03_breakeven_vol_distribution_grid"),
     )
 
-    # 5. The 1Y smile across just the 4 requested options, labeled
+    # 5. The 1Y smile acro`ss just the 4 requested options, labeled
     plot_breakeven_vol_smile(
         results_by_option_1y,
         title=f"Breakeven Volatility Smile{title_suffix}",

@@ -572,3 +572,248 @@ def plot_smile_comparison_grid(moneyness_levels, expiry_labels, modeled_surface,
     plt.show()
 
     return fig, axes
+
+
+def plot_variance_swap_gamma_weights(S_grid, gamma_naive_flat, gamma_correct_flat,
+                                      gamma_naive_skew, gamma_correct_skew, F,
+                                      title="Static Hedge Weighting: Naive (1/K) vs Correct (1/K²)",
+                                      save_path=None):
+    """
+    Recreates Exhibits 2.2.2/2.2.3 from the JPMorgan variance swap note: the
+    aggregate dollar gamma of the replicating strip under the 'naive' 1/K
+    weighting (only regionally linear, not flat) versus the theoretically
+    correct 1/K^2 weighting (constant across a wide region).
+
+    Two panels, because the paper's clean flat-gamma result only holds under
+    its own simplifying assumption of a single flat vol across every strike
+    in the strip (used to isolate the pure weighting math in Exhibits
+    2.2.1-2.2.3). Left panel reproduces that idealized case. Right panel
+    uses each strike's own real listed (skewed) implied vol -- the actual
+    hedge you'd trade -- showing that real skew erodes the idealized
+    flatness of even the 'correct' 1/K^2 weighting. Each curve is normalized
+    by its own value at the forward, since 1/K vs 1/K^2 differ in absolute
+    scale by a factor of ~K and what matters here is shape, not level.
+    """
+    S_grid = np.asarray(S_grid)
+    f_idx = int(np.argmin(np.abs(S_grid - F)))
+
+    def norm(curve):
+        curve = np.asarray(curve)
+        return curve / curve[f_idx]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 6), sharey=True)
+
+    for ax, g_naive, g_correct, subtitle in [
+        (ax1, gamma_naive_flat, gamma_correct_flat, "Idealized: single flat vol for every strike"),
+        (ax2, gamma_naive_skew, gamma_correct_skew, "Real market: each strike's own listed (skewed) vol"),
+    ]:
+        ax.plot(S_grid, norm(g_naive), color="tab:red", linewidth=1.8, label="Naive weights (w ∝ 1/K)")
+        ax.plot(S_grid, norm(g_correct), color="tab:green", linewidth=1.8, label="Correct weights (w ∝ 1/K²)")
+        ax.axvline(F, color="gray", linestyle="--", linewidth=1, label=f"Forward = {F:.2f}")
+        ax.axhline(1.0, color="gray", linewidth=0.5, linestyle=":")
+        ax.set_xlabel("Underlying Level")
+        ax.set_title(subtitle, fontsize=10)
+        ax.legend(fontsize=8)
+
+    ax1.set_ylabel("Aggregate Dollar Gamma (normalized to 1 at the forward)")
+    fig.suptitle(title)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, (ax1, ax2)
+
+
+def plot_variance_swap_smile_and_strike(chain_df, F, K_var, K_var_rule_of_thumb, iv_90put,
+                                         title="SPY Smile & Variance Swap Strike",
+                                         save_path=None):
+    """
+    Scatter of the listed option chain's implied vol smile (puts vs calls,
+    by moneyness), with the rigorously-computed replication fair strike, the
+    Demeterfi-Derman-Kamal-Zou rule-of-thumb strike, and the 90% put IV
+    (Section 1.1's informal shorthand for where the fair strike tends to
+    land) all marked for comparison.
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # OTM side only per type (puts below the forward, calls at/above) --
+    # matches the paper's own replication convention (Section 2.3) and
+    # avoids double-plotting both wings once per type, which just overlays
+    # two near-identical curves via put-call parity and is harder to read.
+    puts = chain_df[(chain_df["option_type"] == "put") & (chain_df["strike"] < F)]
+    calls = chain_df[(chain_df["option_type"] == "call") & (chain_df["strike"] >= F)]
+
+    ax.scatter(puts["strike"] / F, puts["iv"], color="tab:red", s=14, alpha=0.6, label="Listed OTM puts")
+    ax.scatter(calls["strike"] / F, calls["iv"], color="tab:blue", s=14, alpha=0.6, label="Listed OTM calls")
+
+    ax.axhline(K_var, color="tab:green", linewidth=1.8, linestyle="-", label=f"Replication fair strike = {K_var:.1%}")
+    ax.axhline(K_var_rule_of_thumb, color="tab:orange", linewidth=1.8, linestyle="--",
+               label=f"Rule-of-thumb strike = {K_var_rule_of_thumb:.1%}")
+    ax.scatter([0.90], [iv_90put], color="black", marker="D", s=50, zorder=5,
+               label=f"90% put IV = {iv_90put:.1%}")
+    ax.axvline(1.0, color="gray", linestyle=":", linewidth=1, label="Forward (K/F = 100%)")
+
+    ax.set_xlabel("Moneyness (K / Forward)")
+    ax.set_ylabel("Implied Volatility")
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0%}"))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{y:.0%}"))
+    ax.set_title(title)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, ax
+
+
+def plot_variance_swap_hedge_pnl(days, price_path, F, cumulative_pnl, mtm_path, terminal_payoff,
+                                  title="Static Replication + Daily Delta Hedge vs Theoretical MTM",
+                                  save_path=None):
+    """
+    Two-panel figure: the bootstrapped price path with the forward marked
+    (top), and the simulated static-strip + daily-delta-hedge cumulative
+    P&L against the closed-form mark-to-market path from Section 1.3
+    (bottom). If the replication is working, the simulated P&L should
+    roughly track the theoretical MTM curve and land near the theoretical
+    terminal payoff at expiry -- the gap between them is the real-world
+    replication error (finite strikes, discrete hedging, discrete strip).
+    """
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+    ax1.plot(days, price_path, color="tab:blue", linewidth=1.5, label="Simulated price path")
+    ax1.axhline(F, color="gray", linestyle="--", linewidth=1, label=f"Forward = {F:.2f}")
+    ax1.set_ylabel("Price")
+    ax1.set_title("Underlying Path")
+    ax1.legend(fontsize=8)
+
+    ax2.plot(days, cumulative_pnl, color="tab:green", linewidth=1.6, label="Simulated hedge P&L")
+    ax2.plot(days, mtm_path, color="tab:purple", linewidth=1.6, linestyle="--", label="Theoretical MTM (§1.3 formula)")
+    ax2.axhline(terminal_payoff, color="black", linestyle=":", linewidth=1.2,
+                label=f"Theoretical terminal payoff = {terminal_payoff:.4f}")
+    ax2.axhline(0, color="gray", linewidth=0.5)
+    ax2.set_ylabel("P&L (variance points)")
+    ax2.set_xlabel("Days")
+    ax2.set_title("Hedge P&L vs Theoretical Mark-to-Market")
+    ax2.legend(fontsize=8)
+
+    fig.suptitle(title)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, (ax1, ax2)
+
+
+def plot_variance_swap_sensitivities(days, vega_path, skew_sens_path,
+                                      title="Variance Swap Sensitivities Over the Trade Life",
+                                      save_path=None):
+    """
+    Section 1.3's Vega and skew sensitivity, both of which decay linearly
+    to zero as (T-t)/T shrinks toward expiry -- a direct consequence of
+    variance being additive in time.
+    """
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+    ax1.plot(days, vega_path, color="tab:blue", linewidth=1.6)
+    ax1.axhline(0, color="gray", linewidth=0.5)
+    ax1.set_ylabel("Vega (per unit variance notional)")
+    ax1.set_title("Vega Sensitivity")
+
+    ax2.plot(days, skew_sens_path, color="tab:red", linewidth=1.6)
+    ax2.axhline(0, color="gray", linewidth=0.5)
+    ax2.set_ylabel("Skew Sensitivity (∂MTM/∂skew)")
+    ax2.set_xlabel("Days")
+    ax2.set_title("Skew Sensitivity")
+
+    fig.suptitle(title)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, (ax1, ax2)
+
+
+def plot_variance_swap_wing_truncation(strip, truncation, F,
+                                        title="Replication Coverage: Listed Strikes vs Theoretical Continuum",
+                                        save_path=None):
+    """
+    Section 3.2/2.3 note that perfect replication needs infinitely many
+    strikes from 0 to infinity, which a real listed chain can never supply.
+    This plots each listed strike's contribution to the replication
+    integral (bars) against the strike range actually available, annotated
+    with the fraction of the theoretical (flat-vol-extrapolated) integral
+    that range captures -- the uncaptured fraction is real, unhedgeable
+    wing/gap risk.
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    contribution = strip["mid"] * strip["weight"]
+    colors = ["tab:red" if t == "put" else "tab:blue" for t in strip["option_type"]]
+    ax.bar(strip["strike"], contribution, width=strip["strike"].diff().median() * 0.8, color=colors, alpha=0.7)
+    ax.axvline(F, color="gray", linestyle="--", linewidth=1, label=f"Forward = {F:.2f}")
+
+    k_min, k_max = truncation["strike_range"]
+    ax.axvspan(k_min, k_max, color="tab:green", alpha=0.08, label="Listed strike range")
+
+    ax.set_xlabel("Strike")
+    ax.set_ylabel("Contribution to Replication Integral (Price × Weight)")
+    ax.set_title(f"{title}\nCaptured: {truncation['captured_fraction']:.1%} of theoretical continuum integral")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, ax
+
+
+def plot_variance_swap_dividend_adjustment(K_var_ex_div, K_var_div_adj, div_info,
+                                            title="Impact of Dividends on the Fair Strike",
+                                            save_path=None):
+    """
+    Section 3.3: dividends bias realized variance upward, so the ex-dividend
+    fair strike understates the true fair strike. Simple bar comparison of
+    the two, annotated with the trailing dividend data used to compute the
+    adjustment.
+    """
+    fig, ax = plt.subplots(figsize=(7, 6))
+
+    bars = ax.bar(["Ex-dividend\n(naive)", "Dividend-adjusted"], [K_var_ex_div, K_var_div_adj],
+                   color=["tab:gray", "tab:green"], width=0.5)
+    for bar, val in zip(bars, [K_var_ex_div, K_var_div_adj]):
+        ax.text(bar.get_x() + bar.get_width() / 2, val, f"{val:.2%}", ha="center", va="bottom", fontsize=11)
+
+    ax.set_ylabel("Fair Strike (Volatility)")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{y:.0%}"))
+    ax.set_title(
+        f"{title}\nTrailing yield: {div_info['dividend_yield']:.2%} "
+        f"({div_info['n_payments_trailing_year']} payments, ${div_info['annual_dividend']:.2f}/yr)"
+    )
+    fig.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path)
+
+    plt.show()
+
+    return fig, ax
